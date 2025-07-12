@@ -3,10 +3,10 @@ from flask_cors import CORS
 import csv
 import os
 
-
 app = Flask(__name__)
 
-CORS(app, origins=["https://finley-davis.github.io"])
+# Enable CORS for your frontend origin, or for testing allow all origins:
+CORS(app, origins=["https://finley-davis.github.io"])  # or CORS(app) to allow all
 
 DATA_FILE = 'submissions.csv'
 
@@ -14,8 +14,13 @@ DATA_FILE = 'submissions.csv'
 def index():
     return "✅ Longhorn Stream Team backend is running!"
 
-@app.route('/submit', methods=['POST'])
+@app.route('/submit', methods=['POST', 'OPTIONS'])
 def submit():
+    if request.method == 'OPTIONS':
+        # Allows preflight requests to pass
+        response = app.make_default_options_response()
+        return response
+
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No JSON data received'}), 400
@@ -40,5 +45,5 @@ def get_data():
         return jsonify(list(reader))
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # Use Render's port or default 5000 locally
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
