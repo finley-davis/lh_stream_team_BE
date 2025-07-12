@@ -1,33 +1,23 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
 import sqlite3
+import os
+from datetime import datetime
 
 app = Flask(__name__)
-CORS(app, origins=["https://finley-davis.github.io"])  # Adjust origin as needed
+CORS(app, origins=["https://finley-davis.github.io"])
 
-DATABASE = 'data.db'
+DB_FILE = 'data.db'
 
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
-
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
-
+# Initialize the database and create table if it doesn't exist
 def init_db():
-    with app.app_context():
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('''
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute('''
             CREATE TABLE IF NOT EXISTS submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stream TEXT NOT NULL,
+                date TEXT NOT NULL,
                 ph REAL,
                 do REAL,
                 conductivity REAL,
@@ -36,7 +26,9 @@ def init_db():
                 observations TEXT
             )
         ''')
-        db.commit()
+        conn.commit()
+
+init_db()
 
 @app.route('/')
 def index():
@@ -48,33 +40,56 @@ def submit():
     if not data:
         return jsonify({'error': 'No JSON data received'}), 400
 
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute('''
-        INSERT INTO submissions (ph, do, conductivity, airTemp, waterTemp, observations)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (
-        float(data.get('ph', 0)),
-        float(data.get('do', 0)),
-        float(data.get('conductivity', 0)),
-        float(data.get('airTemp', 0)),
-        float(data.get('waterTemp', 0)),
-        data.get('observations', '')
-    ))
-    db.commit()
+    stream = data.get('stream')
+    if not stream:
+        return jsonify({'error': 'Stream name is required'}), 400
+
+    # Use provided date or current time ISO8601 string
+    date = data.get('date', datetime.utcnow().isoformat())
+
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO submissions (stream, date, ph, do, conductivity, airTemp, waterTemp, observations)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            stream,
+            date,
+            float(data.get('ph', 0)),
+            float(data.get('do', 0)),
+            float(data.get('conductivity', 0)),
+            float(data.get('airTemp', 0)),
+            float(data.get('waterTemp', 0)),
+            data.get('observations', '')
+        ))
+        conn.commit()
 
     return jsonify({'message': '✅ Data submitted successfully!'})
 
 @app.route('/get_data', methods=['GET'])
 def get_data():
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute('SELECT ph, do, conductivity, airTemp, waterTemp, observations FROM submissions')
-    rows = cursor.fetchall()
-    results = [dict(row) for row in rows]
-    return jsonify(results)
+    stream = request.args.get('stream')
+    if not stream:
+        return jsonify({'error': 'Stream parameter is required'}), 400
+
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT date, ph, do, conductivity, airTemp, waterTemp, observations
+            FROM submissions WHERE stream = ? ORDER BY date ASC
+        ''', (stream,))
+        rows = c.fetchall()
+        data = [{
+            'date': row[0],
+            'ph': row[1],
+            'do': row[2],
+            'conductivity': row[3],
+            'airTemp': row[4],
+            'waterTemp': row[5],
+            'observations': row[6]
+        } for row in rows]
+    return jsonify(data)
 
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
