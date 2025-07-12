@@ -33,8 +33,7 @@ def submit():
             writer.writeheader()
         writer.writerow(data)
 
-    return jsonify({'message': '✅ Data submitted successfully!'})
-
+    return jsonify({'message': '*giggles*'})
 @app.route('/get_data', methods=['GET'])
 def get_data():
     if not os.path.isfile(DATA_FILE):
