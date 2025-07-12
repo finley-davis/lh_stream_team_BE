@@ -1,48 +1,80 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
-import csv
 import os
+import sqlite3
 
 app = Flask(__name__)
+CORS(app, origins=["https://finley-davis.github.io"])  # Adjust origin as needed
 
-# Enable CORS for your frontend origin, or for testing allow all origins:
-CORS(app, origins=["https://finley-davis.github.io"])  # or CORS(app) to allow all
+DATABASE = 'data.db'
 
-DATA_FILE = 'submissions.csv'
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ph REAL,
+                do REAL,
+                conductivity REAL,
+                airTemp REAL,
+                waterTemp REAL,
+                observations TEXT
+            )
+        ''')
+        db.commit()
 
 @app.route('/')
 def index():
     return "✅ Longhorn Stream Team backend is running!"
 
-@app.route('/submit', methods=['POST', 'OPTIONS'])
+@app.route('/submit', methods=['POST'])
 def submit():
-    if request.method == 'OPTIONS':
-        # Allows preflight requests to pass
-        response = app.make_default_options_response()
-        return response
-
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No JSON data received'}), 400
 
-    # Append to CSV
-    file_exists = os.path.isfile(DATA_FILE)
-    with open(DATA_FILE, 'a', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=data.keys())
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(data)
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        INSERT INTO submissions (ph, do, conductivity, airTemp, waterTemp, observations)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (
+        float(data.get('ph', 0)),
+        float(data.get('do', 0)),
+        float(data.get('conductivity', 0)),
+        float(data.get('airTemp', 0)),
+        float(data.get('waterTemp', 0)),
+        data.get('observations', '')
+    ))
+    db.commit()
 
-    return jsonify({'message': '*giggles*'})
+    return jsonify({'message': '✅ Data submitted successfully!'})
+
 @app.route('/get_data', methods=['GET'])
 def get_data():
-    if not os.path.isfile(DATA_FILE):
-        return jsonify([])
-
-    with open(DATA_FILE, newline='') as f:
-        reader = csv.DictReader(f)
-        return jsonify(list(reader))
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT ph, do, conductivity, airTemp, waterTemp, observations FROM submissions')
+    rows = cursor.fetchall()
+    results = [dict(row) for row in rows]
+    return jsonify(results)
 
 if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
