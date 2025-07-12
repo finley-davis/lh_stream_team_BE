@@ -3,8 +3,10 @@ from flask_cors import CORS
 import csv
 import os
 
+
 app = Flask(__name__)
-CORS(app)  #allow cross-origin requests from github Pages site
+
+CORS(app, origins=["https://YOUR_GITHUB_USERNAME.github.io"])
 
 DATA_FILE = 'submissions.csv'
 
