@@ -6,7 +6,7 @@ import os
 
 app = Flask(__name__)
 
-CORS(app, origins=["https://YOUR_GITHUB_USERNAME.github.io"])
+CORS(app, origins=["https://finley-davis.github.io"])
 
 DATA_FILE = 'submissions.csv'
 
